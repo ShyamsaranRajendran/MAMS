@@ -1,0 +1,623 @@
+import React, { useState, useEffect } from 'react';
+import { Users, Plus, Search, Filter, CheckCircle, XCircle, AlertTriangle, RotateCcw } from 'lucide-react';
+import { api } from '../utils/api';
+import type { Assignment, Asset, Base } from '../types';
+import { useAuth } from '../hooks/useAuth';
+
+const Assignments: React.FC = () => {
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [bases, setBases] = useState<Base[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showExpendModal, setShowExpendModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [assignmentsData, assetsData, basesData] = await Promise.all([
+        api.getAssignments(),
+        api.getAssets(),
+        api.getBases()
+      ]);
+      setAssignments(assignmentsData);
+      setAssets(assetsData);
+      setBases(basesData);
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredAssignments = assignments.filter(assignment => {
+    const matchesSearch = assignment.assetId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         assignment.personnelName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         assignment.personnelId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         assignment.unit.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = !statusFilter || assignment.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const AddAssignmentModal: React.FC = () => {
+    const [formData, setFormData] = useState({
+      assetId: '',
+      baseId: user?.base?._id || '',
+      personnelId: '',
+      personnelName: '',
+      rank: '',
+      unit: '',
+      quantity: 1,
+      purpose: '',
+      notes: ''
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+        await api.createAssignment(formData);
+        setShowAddModal(false);
+        loadData();
+        setFormData({
+          assetId: '',
+          baseId: user?.base?._id || '',
+          personnelId: '',
+          personnelName: '',
+          rank: '',
+          unit: '',
+          quantity: 1,
+          purpose: '',
+          notes: ''
+        });
+      } catch (error) {
+        console.error('Failed to create assignment:', error);
+      }
+    };
+
+    const availableAssets = assets.filter(asset => 
+      asset.baseId._id === formData.baseId && asset.closingBalance > 0
+    );
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-xl font-semibold">Create Asset Assignment</h3>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Base *
+                </label>
+                <select
+                  required
+                  value={formData.baseId}
+                  onChange={(e) => setFormData({ ...formData, baseId: e.target.value, assetId: '' })}
+                  disabled={user?.role !== 'Admin'}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
+                >
+                  {bases.map(base => (
+                    <option key={base._id} value={base._id}>{base.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Asset *
+                </label>
+                <select
+                  required
+                  value={formData.assetId}
+                  onChange={(e) => setFormData({ ...formData, assetId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select Asset</option>
+                  {availableAssets.map(asset => (
+                    <option key={asset._id} value={asset._id}>
+                      {asset.name} (Available: {asset.closingBalance})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Personnel ID *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.personnelId}
+                  onChange={(e) => setFormData({ ...formData, personnelId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., 12345678"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Personnel Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.personnelName}
+                  onChange={(e) => setFormData({ ...formData, personnelName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Full Name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Rank *
+                </label>
+                <select
+                  required
+                  value={formData.rank}
+                  onChange={(e) => setFormData({ ...formData, rank: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select Rank</option>
+                  <option value="Private">Private</option>
+                  <option value="Corporal">Corporal</option>
+                  <option value="Sergeant">Sergeant</option>
+                  <option value="Lieutenant">Lieutenant</option>
+                  <option value="Captain">Captain</option>
+                  <option value="Major">Major</option>
+                  <option value="Colonel">Colonel</option>
+                  <option value="General">General</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Unit *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.unit}
+                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., Alpha Company, 1st Battalion"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quantity *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  max={availableAssets.find(a => a._id === formData.assetId)?.closingBalance || 1}
+                  value={formData.quantity}
+                  onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 1 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Purpose *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.purpose}
+                onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Training exercise, Operational deployment"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Additional Notes
+              </label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Create Assignment
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  const ExpendModal: React.FC = () => {
+    const [expendData, setExpendData] = useState({
+      expendedDate: new Date().toISOString().split('T')[0],
+      notes: ''
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedAssignment) return;
+      
+      try {
+        await api.markAssignmentExpended(selectedAssignment._id, expendData);
+        setShowExpendModal(false);
+        setSelectedAssignment(null);
+        loadData();
+      } catch (error) {
+        console.error('Failed to mark assignment as expended:', error);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl max-w-md w-full mx-4">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-xl font-semibold">Mark as Expended</h3>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Expended Date *
+              </label>
+              <input
+                type="date"
+                required
+                value={expendData.expendedDate}
+                onChange={(e) => setExpendData({ ...expendData, expendedDate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Notes
+              </label>
+              <textarea
+                value={expendData.notes}
+                onChange={(e) => setExpendData({ ...expendData, notes: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Reason for expenditure..."
+              />
+            </div>
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExpendModal(false);
+                  setSelectedAssignment(null);
+                }}
+                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Mark Expended
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  const ReturnModal: React.FC = () => {
+    const [returnData, setReturnData] = useState({
+      returnedQuantity: selectedAssignment?.quantity || 0,
+      notes: ''
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedAssignment) return;
+      
+      try {
+        await api.returnAssignment(selectedAssignment._id, returnData);
+        setShowReturnModal(false);
+        setSelectedAssignment(null);
+        loadData();
+      } catch (error) {
+        console.error('Failed to return assignment:', error);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl max-w-md w-full mx-4">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-xl font-semibold">Return Assignment</h3>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Returned Quantity *
+              </label>
+              <input
+                type="number"
+                required
+                min="1"
+                max={selectedAssignment?.quantity || 1}
+                value={returnData.returnedQuantity}
+                onChange={(e) => setReturnData({ ...returnData, returnedQuantity: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Return Notes
+              </label>
+              <textarea
+                value={returnData.notes}
+                onChange={(e) => setReturnData({ ...returnData, notes: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Condition of returned items..."
+              />
+            </div>
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReturnModal(false);
+                  setSelectedAssignment(null);
+                }}
+                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Process Return
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <Users className="h-8 w-8 text-blue-600" />
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Assignment Management</h1>
+            <p className="text-gray-600">Track asset assignments to personnel</p>
+          </div>
+        </div>
+        {(user?.role === 'Admin' || user?.role === 'Base Commander') && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+          >
+            <Plus className="h-5 w-5" />
+            <span>New Assignment</span>
+          </button>
+        )}
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Assignments</p>
+              <p className="text-2xl font-bold text-gray-900">{assignments.length}</p>
+            </div>
+            <Users className="h-8 w-8 text-blue-600" />
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {assignments.filter(a => a.status === 'Assigned').length}
+              </p>
+            </div>
+            <CheckCircle className="h-8 w-8 text-green-600" />
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Expended</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {assignments.filter(a => a.status === 'Expended').length}
+              </p>
+            </div>
+            <AlertTriangle className="h-8 w-8 text-red-600" />
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Returned</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {assignments.filter(a => a.status === 'Returned').length}
+              </p>
+            </div>
+            <RotateCcw className="h-8 w-8 text-blue-600" />
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+            <input
+              type="text"
+              placeholder="Search assignments..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
+            >
+              <option value="">All Status</option>
+              <option value="Assigned">Assigned</option>
+              <option value="Returned">Returned</option>
+              <option value="Expended">Expended</option>
+              <option value="Lost">Lost</option>
+              <option value="Damaged">Damaged</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Assignments Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Personnel
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Asset & Quantity
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Assignment Details
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAssignments.map((assignment) => (
+                <tr key={assignment._id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {assignment.rank} {assignment.personnelName}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        ID: {assignment.personnelId}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {assignment.unit}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {assignment.assetId.name}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Quantity: {assignment.quantity}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {assignment.purpose}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Assigned: {new Date(assignment.assignmentDate).toLocaleDateString()}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Base: {assignment.baseId.name}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      assignment.status === 'Assigned' ? 'bg-green-100 text-green-800' :
+                      assignment.status === 'Returned' ? 'bg-blue-100 text-blue-800' :
+                      assignment.status === 'Expended' ? 'bg-red-100 text-red-800' :
+                      assignment.status === 'Lost' ? 'bg-gray-100 text-gray-800' :
+                      'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {assignment.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    {assignment.status === 'Assigned' && (user?.role === 'Admin' || user?.role === 'Base Commander') && (
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            setSelectedAssignment(assignment);
+                            setShowReturnModal(true);
+                          }}
+                          className="text-green-600 hover:text-green-900"
+                          title="Return Assignment"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedAssignment(assignment);
+                            setShowExpendModal(true);
+                          }}
+                          className="text-red-600 hover:text-red-900"
+                          title="Mark as Expended"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showAddModal && <AddAssignmentModal />}
+      {showExpendModal && <ExpendModal />}
+      {showReturnModal && <ReturnModal />}
+    </div>
+  );
+};
+
+export default Assignments;
